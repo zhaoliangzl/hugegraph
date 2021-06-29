@@ -31,11 +31,19 @@ public class HugeGraphServer {
 
     private static final Logger LOG = Log.logger(HugeGraphServer.class);
 
-    private final GremlinServer gremlinServer;
     private final RestServer restServer;
+    private final GremlinServer gremlinServer;
 
     public HugeGraphServer(String gremlinServerConf, String restServerConf)
                            throws Exception {
+        try {
+            // Start HugeRestServer
+            this.restServer = HugeRestServer.start(restServerConf);
+        } catch (Throwable e) {
+            LOG.error("HugeRestServer start error: ", e);
+            throw e;
+        }
+
         // Only switch on security manager after HugeGremlinServer started
         SecurityManager securityManager = System.getSecurityManager();
         System.setSecurityManager(null);
@@ -44,40 +52,31 @@ public class HugeGraphServer {
             this.gremlinServer = HugeGremlinServer.start(gremlinServerConf);
         } catch (Throwable e) {
             LOG.error("HugeGremlinServer start error: ", e);
+            try {
+                this.restServer.shutdown().get();
+            } catch (Throwable t) {
+                LOG.error("HugeRestServer stop error: ", t);
+            }
             HugeFactory.shutdown(30L);
             throw e;
         } finally {
             System.setSecurityManager(securityManager);
         }
-
-        try {
-            // Start HugeRestServer
-            this.restServer = HugeRestServer.start(restServerConf);
-        } catch (Throwable e) {
-            LOG.error("HugeRestServer start error: ", e);
-            try {
-                this.gremlinServer.stop().get();
-            } catch (Throwable t) {
-                LOG.error("GremlinServer stop error: ", t);
-            }
-            HugeFactory.shutdown(30L);
-            throw e;
-        }
     }
 
     public void stop() {
-        try {
-            this.restServer.shutdown().get();
-            LOG.info("HugeRestServer stopped");
-        } catch (Throwable e) {
-            LOG.error("HugeRestServer stop error: ", e);
-        }
-
         try {
             this.gremlinServer.stop().get();
             LOG.info("HugeGremlinServer stopped");
         } catch (Throwable e) {
             LOG.error("HugeGremlinServer stop error: ", e);
+        }
+
+        try {
+            this.restServer.shutdown().get();
+            LOG.info("HugeRestServer stopped");
+        } catch (Throwable e) {
+            LOG.error("HugeRestServer stop error: ", e);
         }
 
         try {

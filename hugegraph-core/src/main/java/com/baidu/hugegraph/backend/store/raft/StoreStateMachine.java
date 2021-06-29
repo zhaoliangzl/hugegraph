@@ -48,7 +48,6 @@ import com.baidu.hugegraph.backend.store.raft.rpc.RaftRequests.StoreAction;
 import com.baidu.hugegraph.backend.store.raft.rpc.RaftRequests.StoreType;
 import com.baidu.hugegraph.type.HugeType;
 import com.baidu.hugegraph.type.define.GraphMode;
-import com.baidu.hugegraph.util.E;
 import com.baidu.hugegraph.util.LZ4Util;
 import com.baidu.hugegraph.util.Log;
 
@@ -105,7 +104,7 @@ public final class StoreStateMachine extends StateMachineAdapter {
         LOG.debug("Node role: {}", this.node().selfIsLeader() ?
                                    "leader" : "follower");
         RaftStoreClosure closure = null;
-        List<Future<?>> futures = new ArrayList<>();
+        List<Future<?>> futures = new ArrayList<>(64);
         try {
             while (iter.hasNext()) {
                 closure = (RaftStoreClosure) iter.done();
@@ -119,8 +118,7 @@ public final class StoreStateMachine extends StateMachineAdapter {
                     boolean forwarded = command.forwarded();
                     // Let the producer thread to handle it
                     closure.complete(Status.OK(), () -> {
-                        this.applyCommand(type, action, buffer, forwarded);
-                        return null;
+                        return this.applyCommand(type, action, buffer, forwarded);
                     });
                 } else {
                     // Follower need readMutation data
@@ -133,7 +131,7 @@ public final class StoreStateMachine extends StateMachineAdapter {
                         StoreType type = StoreType.valueOf(buffer.read());
                         StoreAction action = StoreAction.valueOf(buffer.read());
                         try {
-                            this.applyCommand(type, action, buffer, false);
+                            return this.applyCommand(type, action, buffer, false);
                         } catch (Throwable e) {
                             String title = "Failed to execute backend command";
                             LOG.error("{}: {}", title, action, e);
@@ -161,11 +159,9 @@ public final class StoreStateMachine extends StateMachineAdapter {
         }
     }
 
-    private void applyCommand(StoreType type, StoreAction action,
-                              BytesBuffer buffer, boolean forwarded) {
-        E.checkState(type != StoreType.ALL,
-                     "Can't apply command for all store at one time");
-        BackendStore store = this.store(type);
+    private Object applyCommand(StoreType type, StoreAction action,
+                                BytesBuffer buffer, boolean forwarded) {
+        BackendStore store = type != StoreType.ALL ? this.store(type) : null;
         switch (action) {
             case CLEAR:
                 boolean clearSpace = buffer.read() > 0;
@@ -178,8 +174,7 @@ public final class StoreStateMachine extends StateMachineAdapter {
                 break;
             case SNAPSHOT:
                 assert store == null;
-                this.node().snapshot();
-                break;
+                return this.node().snapshot();
             case BEGIN_TX:
                 store.beginTx();
                 break;
@@ -205,6 +200,7 @@ public final class StoreStateMachine extends StateMachineAdapter {
             default:
                 throw new IllegalArgumentException("Invalid action " + action);
         }
+        return null;
     }
 
     @Override

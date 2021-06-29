@@ -28,6 +28,8 @@ import org.slf4j.Logger;
 import com.baidu.hugegraph.HugeGraph;
 import com.baidu.hugegraph.backend.BackendException;
 import com.baidu.hugegraph.backend.store.raft.StoreSnapshotFile;
+import com.baidu.hugegraph.config.CoreOptions;
+import com.baidu.hugegraph.config.HugeConfig;
 import com.baidu.hugegraph.event.EventHub;
 import com.baidu.hugegraph.event.EventListener;
 import com.baidu.hugegraph.util.E;
@@ -131,10 +133,15 @@ public abstract class AbstractBackendStoreProvider
     }
 
     @Override
-    public void truncate() {
+    public void truncate(HugeGraph graph) {
         this.checkOpened();
+        HugeConfig config = (HugeConfig) graph.configuration();
+        String systemStoreName = config.get(CoreOptions.STORE_SYSTEM);
         for (BackendStore store : this.stores.values()) {
-            store.truncate();
+            // Don't truncate system store
+            if (store.store().equals(systemStoreName)) {
+                store.truncate();
+            }
         }
         this.notifyAndWaitEvent(Events.STORE_TRUNCATE);
 

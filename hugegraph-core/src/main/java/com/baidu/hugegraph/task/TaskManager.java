@@ -50,7 +50,7 @@ public final class TaskManager {
                                "server-info-db-worker-%d";
     public static final String TASK_SCHEDULER = "task-scheduler-%d";
 
-    protected static final int SCHEDULE_PERIOD = 3; // Unit second
+    protected static final int SCHEDULE_PERIOD = 5; // Unit second
     private static final int THREADS = 4;
     private static final TaskManager MANAGER = new TaskManager(THREADS);
 

@@ -78,33 +78,36 @@ public final class GraphManager {
         this.rpcServer = new RpcServer(conf);
         this.rpcClient = new RpcClientProvider(conf);
 
-        this.loadGraphs(conf.getMap(ServerOptions.GRAPHS));
+        this.loadGraphs(conf);
         // this.installLicense(conf, "");
         // Raft will load snapshot firstly then launch election and replay log
-        this.waitGraphsStarted();
+        this.waitGraphsReady();
+
         this.checkBackendVersionOrExit(conf);
         this.startRpcServer();
         this.serverStarted(conf);
         this.addMetrics(conf);
     }
 
-    public void loadGraphs(final Map<String, String> graphConfs) {
+    public void loadGraphs(HugeConfig serverConfig) {
+        Map<String, String> graphConfs = serverConfig.getMap(
+                                         ServerOptions.GRAPHS);
         for (Map.Entry<String, String> conf : graphConfs.entrySet()) {
             String name = conf.getKey();
             String path = conf.getValue();
             HugeFactory.checkGraphName(name, "rest-server.properties");
             try {
-                this.loadGraph(name, path);
+                this.loadGraph(serverConfig, name, path);
             } catch (RuntimeException e) {
                 LOG.error("Graph '{}' can't be loaded: '{}'", name, path, e);
             }
         }
     }
 
-    public void waitGraphsStarted() {
+    public void waitGraphsReady() {
         this.graphs.keySet().forEach(name -> {
             HugeGraph graph = this.graph(name);
-            graph.waitStarted();
+            graph.waitReady();
         });
     }
 
@@ -244,8 +247,14 @@ public final class GraphManager {
         });
     }
 
-    private void loadGraph(String name, String path) {
-        final Graph graph = GraphFactory.open(path);
+    private void loadGraph(HugeConfig serverConfig, String name, String path) {
+        HugeConfig config = new HugeConfig(path);
+        String raftEndpoint = serverConfig.get(ServerOptions.RAFT_ENDPOINT);
+        String raftGroupPeers = serverConfig.get(ServerOptions.RAFT_GROUP_PEERS);
+        config.addProperty(ServerOptions.RAFT_ENDPOINT.name(), raftEndpoint);
+        config.addProperty(ServerOptions.RAFT_GROUP_PEERS.name(), raftGroupPeers);
+
+        final Graph graph = GraphFactory.open(config);
         this.graphs.put(name, graph);
         LOG.info("Graph '{}' was successfully configured via '{}'", name, path);
 
@@ -257,6 +266,7 @@ public final class GraphManager {
     }
 
     private void checkBackendVersionOrExit(HugeConfig config) {
+        LOG.info("Check backend version");
         for (String graph : this.graphs()) {
             // TODO: close tx from main thread
             HugeGraph hugegraph = this.graph(graph);
